@@ -1,0 +1,830 @@
+<!doctype html>
+<html lang="zh-Hant">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>健身規劃工具</title>
+<meta name="description" content="計算熱量目標、記錄體重、計算備餐份量、匯出訓練時間表到日曆。">
+<meta name="theme-color" content="#0f766e">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon-180.png">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="健身規劃">
+<style>
+:root {
+  --bg: #f6f7f8; --card: #ffffff; --text: #1c1f23; --muted: #5f6b76; --line: #dde2e6;
+  --accent: #0f766e; --accent-soft: #e2f3f1; --warn: #b45309; --warn-soft: #fdf2e3;
+  --bad: #b91c1c; --good: #15803d; --input: #ffffff; --on-accent: #ffffff;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #121416; --card: #1c1f23; --text: #e8eaed; --muted: #9aa4ae; --line: #30363c;
+    --accent: #2dd4bf; --accent-soft: #123a36; --warn: #f59e0b; --warn-soft: #3a2c12;
+    --bad: #f87171; --good: #4ade80; --input: #15181b; --on-accent: #0b1f1d;
+  }
+}
+* { box-sizing: border-box; }
+body {
+  margin: 0; background: var(--bg); color: var(--text);
+  font: 16px/1.5 -apple-system, BlinkMacSystemFont, "PingFang HK", "Microsoft JhengHei", "Noto Sans TC", sans-serif;
+  padding-bottom: calc(72px + env(safe-area-inset-bottom));
+}
+header { padding: 16px 16px 4px; max-width: 720px; margin: 0 auto; }
+header h1 { font-size: 20px; margin: 0; }
+header p { margin: 2px 0 0; color: var(--muted); font-size: 13px; }
+main { max-width: 720px; margin: 0 auto; padding: 8px 16px 24px; }
+section.tab { display: none; }
+section.tab.active { display: block; }
+.card { background: var(--card); border: 1px solid var(--line); border-radius: 12px; padding: 14px; margin: 12px 0; }
+.card h2 { font-size: 17px; margin: 0 0 10px; }
+.card h3 { font-size: 15px; margin: 14px 0 6px; }
+.grid { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; }
+.grid .full { grid-column: 1 / -1; }
+label { display: block; font-size: 13px; color: var(--muted); }
+input, select {
+  width: 100%; font: inherit; color: var(--text); background: var(--input);
+  border: 1px solid var(--line); border-radius: 8px; padding: 8px 10px; margin-top: 3px; min-height: 40px;
+}
+button {
+  font: inherit; border: 0; border-radius: 8px; padding: 9px 14px; min-height: 40px;
+  background: var(--accent); color: var(--on-accent); cursor: pointer;
+}
+button.ghost { background: transparent; color: var(--accent); border: 1px solid var(--line); }
+button.danger { background: transparent; color: var(--bad); border: 1px solid var(--line); }
+button.small { padding: 4px 10px; min-height: 32px; font-size: 14px; }
+.row { display: flex; gap: 8px; align-items: end; flex-wrap: wrap; }
+.row > * { flex: 1 1 120px; }
+.row > button { flex: 0 0 auto; }
+.stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(140px, 1fr)); gap: 8px; }
+.stat { background: var(--accent-soft); border-radius: 10px; padding: 10px; }
+.stat .k { font-size: 12px; color: var(--muted); }
+.stat .v { font-size: 22px; font-weight: 600; }
+.stat .s { font-size: 12px; color: var(--muted); }
+.note { font-size: 13px; color: var(--muted); margin: 8px 0 0; }
+.warn { background: var(--warn-soft); color: var(--warn); border-radius: 8px; padding: 8px 10px; font-size: 14px; margin-top: 8px; }
+.ok { color: var(--good); }
+table { width: 100%; border-collapse: collapse; font-size: 14px; }
+th, td { text-align: left; padding: 6px 4px; border-bottom: 1px solid var(--line); vertical-align: middle; }
+th { color: var(--muted); font-weight: 500; font-size: 12px; }
+td.num, th.num { text-align: right; }
+.table-wrap { overflow-x: auto; }
+button { white-space: nowrap; }
+table.pace td.num, table.pace th.num { white-space: nowrap; }
+td input { min-height: 34px; padding: 4px 6px; margin: 0; }
+nav {
+  position: fixed; left: 0; right: 0; bottom: 0; background: var(--card); border-top: 1px solid var(--line);
+  display: flex; justify-content: center; padding-bottom: env(safe-area-inset-bottom); z-index: 10;
+}
+nav button {
+  flex: 1; max-width: 144px; background: transparent; color: var(--muted); border-radius: 0;
+  padding: 10px 4px; font-size: 13px; min-height: 56px;
+}
+nav button.active { color: var(--accent); font-weight: 600; box-shadow: inset 0 2px 0 var(--accent); }
+svg.chart { width: 100%; max-width: 480px; height: auto; display: block; }
+.tag { display: inline-block; font-size: 11px; padding: 1px 6px; border-radius: 6px; background: var(--warn-soft); color: var(--warn); margin-left: 4px; }
+.muted { color: var(--muted); }
+</style>
+</head>
+<body>
+<header>
+  <h1>健身規劃工具 <span class="muted" style="font-size:13px;font-weight:400">v0.2</span></h1>
+  <p>所有資料只儲存在這部裝置的瀏覽器內。</p>
+</header>
+
+<main>
+<!-- ============ 目標 ============ -->
+<section class="tab active" id="tab-goal">
+  <div class="card">
+    <h2>個人資料</h2>
+    <div class="grid">
+      <label>性別
+        <select id="p-sex"><option value="m">男</option><option value="f">女</option></select>
+      </label>
+      <label>年齡
+        <input id="p-age" type="number" inputmode="numeric" min="14" max="90" placeholder="例如 24">
+      </label>
+      <label>身高（cm）
+        <input id="p-height" type="number" inputmode="decimal" step="0.1" placeholder="例如 174.5">
+      </label>
+      <label>體重（kg）
+        <input id="p-weight" type="number" inputmode="decimal" step="0.1" placeholder="例如 85">
+      </label>
+      <label>體脂率（%，可留空）
+        <input id="p-bf" type="number" inputmode="decimal" step="0.1" placeholder="有 InBody 才填">
+      </label>
+      <label>目標體重（kg，可留空）
+        <input id="p-goal" type="number" inputmode="decimal" step="0.1" placeholder="例如 68">
+      </label>
+      <label class="full">日常活動量
+        <select id="p-activity">
+          <option value="1.2">1.2：幾乎不動，沒有訓練</option>
+          <option value="1.375">1.375：輕度，每週訓練 1–3 次</option>
+          <option value="1.4">1.4：學生或上班族，每週訓練約 3 次</option>
+          <option value="1.55">1.55：中度，每週訓練 3–5 次</option>
+          <option value="1.725">1.725：高度，每週訓練 6–7 次</option>
+        </select>
+      </label>
+      <label>減脂速度（見下表）
+        <select id="p-pace">
+          <option value="maint">維持（缺口 0%）</option>
+          <option value="mild">溫和（缺口 10%）</option>
+          <option value="std">標準（缺口 20%）</option>
+          <option value="aggr">進取（缺口 30%）</option>
+          <option value="custom">自訂熱量</option>
+        </select>
+      </label>
+      <label id="p-custom-wrap" class="full" style="display:none">自訂每日熱量（kcal）
+        <input id="p-custom" type="number" inputmode="numeric" step="10" placeholder="例如 1900">
+      </label>
+      <label>一日幾餐
+        <select id="p-meals">
+          <option value="1">1 餐</option><option value="2">2 餐</option>
+          <option value="3">3 餐</option><option value="4">4 餐</option><option value="5">5 餐</option>
+        </select>
+      </label>
+    </div>
+  </div>
+
+  <div class="card">
+    <h2>揀減脂速度</h2>
+    <div id="pace-out"><p class="muted">填好年齡、身高和體重之後，這裡會列出每種速度的熱量範圍。</p></div>
+  </div>
+
+  <div class="card">
+    <h2>每日目標</h2>
+    <div id="goal-out"><p class="muted">填好年齡、身高和體重之後，這裡會顯示結果。</p></div>
+  </div>
+</section>
+
+<!-- ============ 磅重 ============ -->
+<section class="tab" id="tab-weight">
+  <div class="card">
+    <h2>記錄體重</h2>
+    <div class="row">
+      <label>日期<input id="w-date" type="date"></label>
+      <label>體重（kg）<input id="w-kg" type="number" inputmode="decimal" step="0.1"></label>
+      <label>腰圍（cm，可留空）<input id="w-waist" type="number" inputmode="decimal" step="0.1"></label>
+      <button id="w-add">記錄</button>
+    </div>
+    <p class="note">每朝起床、去完廁所、吃早餐之前磅。看每週平均，不要看單日。</p>
+  </div>
+  <div class="card">
+    <h2>趨勢</h2>
+    <div id="w-summary"></div>
+    <div id="w-chart"></div>
+  </div>
+  <div class="card">
+    <h2>全部記錄</h2>
+    <div class="table-wrap"><table id="w-table"></table></div>
+  </div>
+</section>
+
+<!-- ============ 備餐 ============ -->
+<section class="tab" id="tab-prep">
+  <div class="card">
+    <h2>加入材料</h2>
+    <div class="row">
+      <label style="flex:2 1 180px">材料<select id="m-food"></select></label>
+      <label>重量（g，生重）<input id="m-grams" type="number" inputmode="numeric" placeholder="例如 1000"></label>
+      <button id="m-add">加入</button>
+    </div>
+    <p class="note">肉類和蔬菜都用「生重」，即未煮之前的重量。白飯例外，用熟重。</p>
+  </div>
+
+  <div class="card">
+    <h2>材料清單</h2>
+    <div class="table-wrap"><table id="m-table"></table></div>
+    <div class="grid" style="margin-top:10px">
+      <label>分成幾多盒<input id="m-boxes" type="number" inputmode="numeric" min="1"></label>
+      <label>每日食幾多盒<input id="m-perday" type="number" inputmode="numeric" min="1" max="6"></label>
+    </div>
+    <p class="note" id="m-suggest"></p>
+  </div>
+
+  <div class="card">
+    <h2>每盒份量</h2>
+    <div id="m-out"><p class="muted">加入材料之後，這裡會顯示每盒份量和營養。</p></div>
+  </div>
+
+  <div class="card">
+    <h2>自訂材料</h2>
+    <p class="note" style="margin-top:0">清單沒有的材料可以自己加，數值看包裝上的營養標籤（每 100 g）。</p>
+    <div class="grid" style="margin-top:8px">
+      <label class="full">名稱<input id="c-name" placeholder="例如 雞蛋白"></label>
+      <label>類別
+        <select id="c-cat">
+          <option value="protein">蛋白質</option><option value="carb">澱粉 / 碳水</option>
+          <option value="veg">蔬菜</option><option value="fat">油 / 醬料</option><option value="other">其他</option>
+        </select>
+      </label>
+      <label>熱量（kcal）<input id="c-kcal" type="number" inputmode="decimal"></label>
+      <label>蛋白質（g）<input id="c-p" type="number" inputmode="decimal"></label>
+      <label>碳水（g）<input id="c-c" type="number" inputmode="decimal"></label>
+      <label>脂肪（g）<input id="c-f" type="number" inputmode="decimal"></label>
+    </div>
+    <div class="row" style="margin-top:10px"><button id="c-add">加入自訂材料</button></div>
+  </div>
+</section>
+
+<!-- ============ 時間表 ============ -->
+<section class="tab" id="tab-plan">
+  <div class="card">
+    <h2>每週訓練時間</h2>
+    <div class="table-wrap"><table id="s-table"></table></div>
+    <div class="row" style="margin-top:10px"><button class="ghost" id="s-add">＋ 加一項</button></div>
+  </div>
+  <div class="card">
+    <h2>匯出到日曆</h2>
+    <div class="grid">
+      <label>開始日期<input id="s-start" type="date"></label>
+      <label>結束日期<input id="s-end" type="date"></label>
+      <label class="full">提前幾多分鐘提示
+        <select id="s-alarm">
+          <option value="0">不提示</option><option value="15">15 分鐘</option>
+          <option value="30">30 分鐘</option><option value="60">1 小時</option>
+        </select>
+      </label>
+    </div>
+    <div class="row" style="margin-top:10px"><button id="s-export">下載 .ics 日曆檔</button></div>
+    <p class="note">iPhone：用 Safari 下載之後打開，按「加入全部」，訓練就會出現在「日曆」App 並按時提示。</p>
+    <p class="note" id="s-msg"></p>
+  </div>
+</section>
+
+<!-- ============ 設定 ============ -->
+<section class="tab" id="tab-settings">
+  <div class="card">
+    <h2>備份</h2>
+    <p class="note" style="margin-top:0">資料只存在這部裝置。清除瀏覽器資料就會消失，記得定期備份。</p>
+    <div class="row" style="margin-top:10px">
+      <button id="b-export">下載備份</button>
+      <label class="ghost" style="flex:0 0 auto">
+        <span style="display:inline-block;padding:9px 14px;border:1px solid var(--line);border-radius:8px;color:var(--accent);cursor:pointer">匯入備份</span>
+        <input id="b-import" type="file" accept="application/json,.json" style="display:none">
+      </label>
+    </div>
+    <p class="note" id="b-msg"></p>
+  </div>
+  <div class="card">
+    <h2>清除全部資料</h2>
+    <button class="danger" id="b-clear">清除全部資料</button>
+    <p class="note" id="b-clear-msg"></p>
+  </div>
+  <div class="card">
+    <h2>說明</h2>
+    <p class="note" style="margin-top:0">
+      本工具只作一般參考，不是醫療建議。有病史、懷孕或正在服藥，請先諮詢醫生。<br>
+      計算方法：基礎代謝用 Mifflin-St Jeor 公式；食物數值主要取自 USDA FoodData Central（每 100 g 約數）；標有「估計」的是估計值。<br>
+      每減 1 kg 脂肪約需 7,700 kcal 熱量缺口（常用估算，實際因人而異）。
+    </p>
+  </div>
+</section>
+</main>
+
+<nav>
+  <button data-tab="goal" class="active">目標</button>
+  <button data-tab="weight">磅重</button>
+  <button data-tab="prep">備餐</button>
+  <button data-tab="plan">時間表</button>
+  <button data-tab="settings">設定</button>
+</nav>
+
+<script>
+'use strict';
+
+// ---------- 食物資料（每 100 g：kcal、蛋白質、碳水、脂肪） ----------
+// est：估計值；eatFirst：煮熟後不耐放，建議先食
+const FOODS = [
+  { id: 'chicken_breast', name: '雞胸肉（去皮，生）', cat: 'protein', n: [120, 22.5, 0, 2.6] },
+  { id: 'chicken_tender', name: '雞柳（生）', cat: 'protein', n: [120, 22.5, 0, 2.6], est: true },
+  { id: 'shrimp', name: '蝦仁（去殼，生）', cat: 'protein', n: [85, 20.1, 0, 0.5] },
+  { id: 'egg', name: '雞蛋（全蛋，1 隻約 50 g）', cat: 'protein', n: [143, 12.6, 0.7, 9.5] },
+  { id: 'salmon', name: '三文魚（養殖，生）', cat: 'protein', n: [208, 20.4, 0, 13.4] },
+  { id: 'beef_lean', name: '瘦牛肉（生）', cat: 'protein', n: [137, 21.4, 0, 5] },
+  { id: 'tofu', name: '豆腐（一般）', cat: 'protein', n: [76, 8.1, 1.9, 4.8] },
+  { id: 'greek_yogurt', name: '希臘乳酪（脫脂）', cat: 'protein', n: [59, 10.3, 3.6, 0.4] },
+  { id: 'milk_lowfat', name: '低脂奶（1%，ml）', cat: 'protein', n: [42, 3.4, 5, 1] },
+  { id: 'potato', name: '薯仔（生）', cat: 'carb', n: [77, 2, 17.5, 0.1] },
+  { id: 'sweet_potato', name: '番薯（生）', cat: 'carb', n: [86, 1.6, 20.1, 0.1] },
+  { id: 'rice_white', name: '白飯（熟）', cat: 'carb', n: [130, 2.7, 28.2, 0.3] },
+  { id: 'rice_brown', name: '糙米飯（熟）', cat: 'carb', n: [123, 2.7, 25.6, 1] },
+  { id: 'oats', name: '燕麥片（乾）', cat: 'carb', n: [379, 13.2, 67.7, 6.5] },
+  { id: 'banana', name: '香蕉', cat: 'carb', n: [89, 1.1, 22.8, 0.3] },
+  { id: 'pumpkin', name: '南瓜（生）', cat: 'veg', n: [26, 1, 6.5, 0.1] },
+  { id: 'broccoli', name: '西蘭花', cat: 'veg', n: [34, 2.8, 6.6, 0.4] },
+  { id: 'spinach', name: '菠菜', cat: 'veg', n: [23, 2.9, 3.6, 0.4], eatFirst: true },
+  { id: 'carrot', name: '紅蘿蔔', cat: 'veg', n: [41, 0.9, 9.6, 0.2] },
+  { id: 'onion', name: '洋蔥', cat: 'veg', n: [40, 1.1, 9.3, 0.1] },
+  { id: 'snap_pea', name: '甜豆', cat: 'veg', n: [42, 2.8, 7.6, 0.2] },
+  { id: 'luffa', name: '勝瓜', cat: 'veg', n: [20, 1.2, 4.4, 0.2], eatFirst: true },
+  { id: 'garlic_scape', name: '蒜心', cat: 'veg', n: [35, 1.5, 7, 0.2], est: true },
+  { id: 'wood_ear', name: '木耳（浸發後）', cat: 'veg', n: [25, 0.5, 6.8, 0], est: true },
+  { id: 'veg_other', name: '其他蔬菜（平均）', cat: 'veg', n: [30, 2, 5, 0.3], est: true },
+  { id: 'oil', name: '食油', cat: 'fat', n: [884, 0, 0, 100] },
+  { id: 'chili_oil', name: '辣椒油類醬料', cat: 'fat', n: [600, 2, 8, 62], est: true },
+];
+const CAT_NAME = { protein: '蛋白質', carb: '澱粉 / 碳水', veg: '蔬菜', fat: '油 / 醬料', other: '其他' };
+const PACE = {
+  maint:  { pct: 0,    pFFM: 2.2, pBW: 1.6, label: '維持', who: '減脂休息期、考試或壓力大、生病' },
+  mild:   { pct: 0.10, pFFM: 2.3, pBW: 1.6, label: '溫和', who: '體脂已不高，想盡量增肌' },
+  std:    { pct: 0.20, pFFM: 2.6, pBW: 1.8, label: '標準', who: '大部分人的預設' },
+  aggr:   { pct: 0.30, pFFM: 3.0, pBW: 2.0, label: '進取', who: '體脂較高、想快一點；蛋白質一定要吃夠' },
+  custom: { pct: null, pFFM: 2.6, pBW: 1.8, label: '自訂', who: '' },
+};
+const PACE_ORDER = ['maint', 'mild', 'std', 'aggr'];
+const KCAL_PER_KG_FAT = 7700;
+const DOW = ['日', '一', '二', '三', '四', '五', '六'];
+
+// ---------- 儲存 ----------
+const KEY = 'fitplan.v1';
+const DEFAULT_STATE = () => ({
+  version: 1,
+  profile: { sex: 'm', age: '', height: '', weight: '', bf: '', goal: '', activity: '1.4', pace: 'std', customKcal: '', meals: '3', adjust: 0 },
+  weights: [],
+  customFoods: [],
+  prep: { items: [], boxes: '', perDay: 2 },
+  schedule: { items: [], start: '', end: '', alarm: '30' },
+});
+let state = load();
+
+function merge(data) {
+  const d = DEFAULT_STATE();
+  const s = Object.assign(d, data);
+  s.profile = Object.assign(DEFAULT_STATE().profile, data.profile || {});
+  if (!PACE[s.profile.pace]) s.profile.pace = 'std';
+  return s;
+}
+function load() {
+  try {
+    const raw = localStorage.getItem(KEY);
+    if (raw) return merge(JSON.parse(raw));
+  } catch (e) { /* 私密模式或被封鎖時，用預設值 */ }
+  return DEFAULT_STATE();
+}
+function save() {
+  try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) { /* 無法儲存時忽略 */ }
+}
+
+// ---------- 小工具 ----------
+const $ = (id) => document.getElementById(id);
+const num = (v) => { const x = parseFloat(v); return Number.isFinite(x) ? x : null; };
+const r0 = (x) => Math.round(x);
+const r1 = (x) => Math.round(x * 10) / 10;
+const esc = (s) => String(s).replace(/[&<>"']/g, (c) => ({ '&': '&amp;', '<': '&lt;', '>': '&gt;', '"': '&quot;', "'": '&#39;' }[c]));
+const todayStr = () => { const d = new Date(); return ymd(d); };
+const ymd = (d) => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+const parseYmd = (s) => { const [y, m, d] = s.split('-').map(Number); return new Date(y, m - 1, d); };
+const allFoods = () => FOODS.concat(state.customFoods);
+const foodById = (id) => allFoods().find((f) => f.id === id);
+
+// ---------- 分頁 ----------
+document.querySelectorAll('nav button').forEach((b) => {
+  b.addEventListener('click', () => {
+    document.querySelectorAll('nav button').forEach((x) => x.classList.toggle('active', x === b));
+    document.querySelectorAll('section.tab').forEach((s) => s.classList.toggle('active', s.id === 'tab-' + b.dataset.tab));
+    window.scrollTo(0, 0);
+  });
+});
+
+// ---------- 目標計算 ----------
+function calcTargets(paceKey) {
+  const p = state.profile;
+  const age = num(p.age), h = num(p.height), w = num(p.weight), bf = num(p.bf);
+  if (!age || !h || !w) return null;
+  const bmr = 10 * w + 6.25 * h - 5 * age + (p.sex === 'm' ? 5 : -161);
+  const tdee = bmr * parseFloat(p.activity);
+  let key = paceKey || p.pace;
+  const custom = num(p.customKcal);
+  if (key === 'custom' && !(custom >= 800)) key = 'std';
+  const pace = PACE[key];
+  const base = key === 'custom' ? custom : tdee * (1 - pace.pct);
+  const kcal = Math.round((base + (p.adjust || 0)) / 10) * 10;
+  const ffm = bf ? w * (1 - bf / 100) : null;
+  let protein = ffm ? ffm * pace.pFFM : w * pace.pBW;
+  protein = Math.min(protein, w * 2.4);
+  const fat = w * 0.65;
+  const carb = Math.max(0, (kcal - protein * 4 - fat * 9) / 4);
+  const deficit = tdee - kcal;
+  const lossPerWeek = deficit * 7 / KCAL_PER_KG_FAT;
+  return { bmr, tdee, kcal, protein, fat, carb, deficit, lossPerWeek, ffm, w, pace, key };
+}
+
+function renderPace() {
+  const p = state.profile, out = $('pace-out');
+  $('p-custom-wrap').style.display = p.pace === 'custom' ? '' : 'none';
+  const sel = $('p-pace');
+  const rows = PACE_ORDER.map((k) => ({ k, t: calcTargets(k) }));
+  if (!rows[0].t) {
+    out.innerHTML = '<p class="muted">填好年齡、身高和體重之後，這裡會列出每種速度的熱量範圍。</p>';
+    PACE_ORDER.forEach((k) => { sel.querySelector(`option[value="${k}"]`).textContent = `${PACE[k].label}（缺口 ${PACE[k].pct * 100}%）`; });
+    return;
+  }
+  rows.forEach(({ k, t }) => { sel.querySelector(`option[value="${k}"]`).textContent = `${PACE[k].label}：${r0(t.kcal)} kcal`; });
+  const goal = num(p.goal);
+  const weeksTo = (t) => (goal && goal < t.w && t.lossPerWeek > 0.05) ? `${r0((t.w - goal) / t.lossPerWeek)} 週` : '–';
+  out.innerHTML = `<div class="table-wrap"><table class="pace">
+    <tr><th>速度</th><th class="num">熱量</th><th class="num">每週減</th><th class="num">需時</th><th></th></tr>
+    ${rows.map(({ k, t }) => `<tr${p.pace === k ? ' style="background:var(--accent-soft)"' : ''}>
+      <td><b>${PACE[k].label}</b><div class="muted" style="font-size:12px">${PACE[k].who}</div></td>
+      <td class="num">${r0(t.kcal)}</td>
+      <td class="num">${t.lossPerWeek > 0.05 ? r1(t.lossPerWeek) + ' kg' : '–'}</td>
+      <td class="num">${weeksTo(t)}</td>
+      <td class="num">${p.pace === k ? '<span class="ok">使用中</span>' : `<button class="ghost small" data-pace="${k}">選用</button>`}</td>
+    </tr>`).join('')}
+  </table></div>
+  <p class="note">範圍：${r0(rows[3].t.kcal)}（進取）至 ${r0(rows[0].t.kcal)} kcal（維持）。想用其他數字，可以在「減脂速度」揀「自訂熱量」。${p.adjust ? `以上已包括按磅重趨勢的調整 ${p.adjust > 0 ? '+' : ''}${p.adjust} kcal。` : ''}</p>`;
+  out.querySelectorAll('[data-pace]').forEach((b) => b.onclick = () => {
+    state.profile.pace = b.dataset.pace; sel.value = b.dataset.pace; save(); renderAll();
+  });
+}
+
+function renderGoal() {
+  const t = calcTargets();
+  const out = $('goal-out');
+  if (!t) { out.innerHTML = '<p class="muted">填好年齡、身高和體重之後，這裡會顯示結果。</p>'; return; }
+  const p = state.profile, meals = parseInt(p.meals, 10);
+  const warns = [];
+  if (p.pace === 'custom' && t.key !== 'custom') warns.push('未填自訂熱量（最少 800 kcal），暫時用「標準」計算。');
+  if (t.kcal > t.tdee + 50) warns.push(`目標熱量高於每日總消耗（${r0(t.tdee)} kcal），體重會上升。`);
+  if (t.kcal < t.bmr - 50) warns.push(`目標熱量（${r0(t.kcal)} kcal）低於基礎代謝（${r0(t.bmr)} kcal）。不建議長期維持，請留意精神、睡眠和訓練表現。`);
+  if (t.lossPerWeek > t.w * 0.01) warns.push(`預計每週減 ${r1(t.lossPerWeek)} kg，超過體重的 1%。速度偏快，肌肉流失的風險較高。`);
+  if (t.carb < 100) warns.push(`碳水只有 ${r0(t.carb)} g，訓練表現可能受影響。`);
+  if (meals === 1) warns.push('一日 1 餐難以吃夠蛋白質，不利增肌，建議至少 2 餐。');
+  let goalLine = '';
+  const goal = num(p.goal);
+  if (goal && goal < t.w && t.lossPerWeek > 0) {
+    const weeks = (t.w - goal) / t.lossPerWeek;
+    const eta = new Date(); eta.setDate(eta.getDate() + Math.round(weeks * 7));
+    goalLine = `<p class="note">以目前速度，由 ${t.w} kg 到 ${goal} kg 大約需要 ${r0(weeks)} 週（約 ${eta.getFullYear()} 年 ${eta.getMonth() + 1} 月）。實際上通常會比計算慢，因為體重下降後消耗也會減少。</p>`;
+  }
+  const adj = p.adjust ? `<p class="note">已按磅重趨勢調整 ${p.adjust > 0 ? '+' : ''}${p.adjust} kcal。<button class="ghost small" id="adj-reset">重設</button></p>` : '';
+  out.innerHTML = `
+    <div class="stats">
+      <div class="stat"><div class="k">每日目標熱量</div><div class="v">${r0(t.kcal)}</div><div class="s">kcal（${t.pace.label}）</div></div>
+      <div class="stat"><div class="k">蛋白質</div><div class="v">${r0(t.protein)} g</div><div class="s">${t.ffm ? '按去脂體重計' : '按體重計'}</div></div>
+      <div class="stat"><div class="k">碳水</div><div class="v">${r0(t.carb)} g</div><div class="s">餘下熱量</div></div>
+      <div class="stat"><div class="k">脂肪</div><div class="v">${r0(t.fat)} g</div><div class="s">每公斤 0.65 g</div></div>
+    </div>
+    <h3>計算過程</h3>
+    <table>
+      <tr><td>基礎代謝 BMR</td><td class="num">${r0(t.bmr)} kcal</td></tr>
+      <tr><td>每日總消耗 TDEE（× ${p.activity}）</td><td class="num">${r0(t.tdee)} kcal</td></tr>
+      <tr><td>熱量缺口</td><td class="num">${r0(t.deficit)} kcal / 日</td></tr>
+      <tr><td>預計每週減脂</td><td class="num">${r1(t.lossPerWeek)} kg</td></tr>
+      ${t.ffm ? `<tr><td>去脂體重</td><td class="num">${r1(t.ffm)} kg</td></tr>` : ''}
+    </table>
+    <h3>每餐目標（一日 ${meals} 餐）</h3>
+    <p style="margin:0">每餐約 <b>${r0(t.kcal / meals)} kcal</b>、蛋白質 <b>${r0(t.protein / meals)} g</b></p>
+    ${goalLine}${adj}
+    ${warns.map((w) => `<div class="warn">${esc(w)}</div>`).join('')}
+    <p class="note">頭 1–2 週體重會跌得較快，主要是水分，屬正常。之後看「磅重」分頁的每週平均再調整。</p>`;
+  const reset = $('adj-reset');
+  if (reset) reset.onclick = () => { state.profile.adjust = 0; save(); renderAll(); };
+}
+
+function bindProfile() {
+  const map = { sex: 'p-sex', age: 'p-age', height: 'p-height', weight: 'p-weight', bf: 'p-bf', goal: 'p-goal', activity: 'p-activity', pace: 'p-pace', customKcal: 'p-custom', meals: 'p-meals' };
+  Object.entries(map).forEach(([k, id]) => {
+    const el = $(id);
+    el.value = state.profile[k];
+    el.oninput = () => { state.profile[k] = el.value; save(); renderAll(); };
+  });
+}
+
+// ---------- 磅重 ----------
+function weeklyWindows() {
+  const ws = state.weights.slice().sort((a, b) => a.date.localeCompare(b.date));
+  if (!ws.length) return null;
+  const last = parseYmd(ws[ws.length - 1].date);
+  const inRange = (from, to) => ws.filter((x) => { const d = parseYmd(x.date); return d > from && d <= to; });
+  const d7 = new Date(last); d7.setDate(d7.getDate() - 7);
+  const d14 = new Date(last); d14.setDate(d14.getDate() - 14);
+  const cur = inRange(d7, last), prev = inRange(d14, d7);
+  const avg = (arr) => arr.reduce((s, x) => s + x.kg, 0) / arr.length;
+  return { ws, cur, prev, curAvg: cur.length ? avg(cur) : null, prevAvg: prev.length ? avg(prev) : null };
+}
+
+function renderWeights() {
+  const ws = state.weights.slice().sort((a, b) => b.date.localeCompare(a.date));
+  $('w-table').innerHTML = ws.length
+    ? '<tr><th>日期</th><th class="num">體重</th><th class="num">腰圍</th><th></th></tr>' +
+      ws.map((x) => `<tr><td>${esc(x.date)}</td><td class="num">${x.kg} kg</td><td class="num">${x.waist ? x.waist + ' cm' : '–'}</td>
+        <td class="num"><button class="danger small" data-del="${esc(x.date)}">刪除</button></td></tr>`).join('')
+    : '<tr><td class="muted">未有記錄。</td></tr>';
+  $('w-table').querySelectorAll('[data-del]').forEach((b) => b.onclick = () => {
+    state.weights = state.weights.filter((x) => x.date !== b.dataset.del); save(); renderWeights();
+  });
+
+  const win = weeklyWindows();
+  const sum = $('w-summary');
+  if (!win) { sum.innerHTML = '<p class="muted">記錄第一個體重之後，這裡會顯示趨勢。</p>'; $('w-chart').innerHTML = ''; return; }
+  const t = calcTargets();
+  let html = '<div class="stats">';
+  html += `<div class="stat"><div class="k">最近 7 日平均</div><div class="v">${win.curAvg ? r1(win.curAvg) : '–'}</div><div class="s">kg（${win.cur.length} 次記錄）</div></div>`;
+  if (win.curAvg && win.prevAvg) {
+    const change = win.curAvg - win.prevAvg;
+    html += `<div class="stat"><div class="k">對比前 7 日</div><div class="v">${change > 0 ? '+' : ''}${r1(change)}</div><div class="s">kg / 週</div></div>`;
+  }
+  html += '</div>';
+
+  // 調整建議：前後兩個 7 日都要有至少 3 次記錄
+  if (t && win.cur.length >= 3 && win.prev.length >= 3) {
+    const loss = win.prevAvg - win.curAvg;
+    const pctBW = loss / win.curAvg;
+    let tip = null, delta = 0;
+    if (loss < t.lossPerWeek * 0.5) { tip = `每週只減 ${r1(loss)} kg，少於預計（${r1(t.lossPerWeek)} kg）的一半。建議每日減 150 kcal（從碳水扣）。如果這是第一次出現，可以先多觀察一週。`; delta = -150; }
+    else if (pctBW > 0.012) { tip = `每週減 ${r1(loss)} kg，超過體重的 1.2%，偏快。建議每日加 150 kcal，保住肌肉。`; delta = 150; }
+    if (tip) html += `<div class="warn">${tip} <button class="small" id="w-apply">套用 ${delta > 0 ? '+' : ''}${delta} kcal</button></div>`;
+    else html += `<p class="ok" style="margin:8px 0 0">進度符合預期，維持現時熱量。</p>`;
+    sum.innerHTML = html;
+    const ap = $('w-apply');
+    if (ap) ap.onclick = () => { state.profile.adjust = (state.profile.adjust || 0) + delta; save(); renderAll(); };
+  } else {
+    html += '<p class="note">前後兩個星期各有至少 3 次記錄之後，會提示是否需要調整熱量。</p>';
+    sum.innerHTML = html;
+  }
+  $('w-chart').innerHTML = chartSvg(win.ws);
+}
+
+function chartSvg(ws) {
+  if (ws.length < 2) return '';
+  const W = 360, H = 200, pl = 36, pr = 8, pt = 10, pb = 24;
+  const t0 = parseYmd(ws[0].date).getTime(), t1 = parseYmd(ws[ws.length - 1].date).getTime();
+  const kgs = ws.map((x) => x.kg);
+  let lo = Math.min(...kgs), hi = Math.max(...kgs);
+  if (hi - lo < 2) { const m = (hi + lo) / 2; lo = m - 1; hi = m + 1; }
+  const x = (d) => pl + (t1 === t0 ? 0 : (parseYmd(d).getTime() - t0) / (t1 - t0)) * (W - pl - pr);
+  const y = (kg) => pt + (hi - kg) / (hi - lo) * (H - pt - pb);
+  // 7 日移動平均
+  const ma = ws.map((p) => {
+    const d = parseYmd(p.date).getTime();
+    const win = ws.filter((q) => { const e = parseYmd(q.date).getTime(); return e <= d && e > d - 7 * 864e5; });
+    return { date: p.date, kg: win.reduce((s, q) => s + q.kg, 0) / win.length };
+  });
+  const line = (arr) => arr.map((p, i) => `${i ? 'L' : 'M'}${x(p.date).toFixed(1)},${y(p.kg).toFixed(1)}`).join(' ');
+  const ticks = [lo, (lo + hi) / 2, hi];
+  return `<svg class="chart" viewBox="0 0 ${W} ${H}" role="img" aria-label="體重趨勢圖">
+    ${ticks.map((v) => `<line x1="${pl}" x2="${W - pr}" y1="${y(v)}" y2="${y(v)}" stroke="var(--line)"/>
+      <text x="${pl - 5}" y="${y(v) + 4}" font-size="11" text-anchor="end" fill="var(--muted)">${r1(v)}</text>`).join('')}
+    <text x="${pl}" y="${H - 6}" font-size="11" fill="var(--muted)">${ws[0].date}</text>
+    <text x="${W - pr}" y="${H - 6}" font-size="11" text-anchor="end" fill="var(--muted)">${ws[ws.length - 1].date}</text>
+    <path d="${line(ws)}" fill="none" stroke="var(--muted)" stroke-width="1" stroke-dasharray="3 3"/>
+    ${ws.map((p) => `<circle cx="${x(p.date)}" cy="${y(p.kg)}" r="2.5" fill="var(--muted)"/>`).join('')}
+    <path d="${line(ma)}" fill="none" stroke="var(--accent)" stroke-width="2.5"/>
+  </svg>
+  <p class="note">虛線：每日體重。實線：7 日平均。</p>`;
+}
+
+function bindWeights() {
+  $('w-date').value = todayStr();
+  $('w-add').onclick = () => {
+    const date = $('w-date').value, kg = num($('w-kg').value), waist = num($('w-waist').value);
+    if (!date || !kg || kg < 20 || kg > 400) { $('w-kg').focus(); return; }
+    state.weights = state.weights.filter((x) => x.date !== date);
+    state.weights.push({ date, kg, waist: waist || null });
+    if (date === todayStr() || !state.profile.weight) state.profile.weight = String(kg);
+    $('p-weight').value = state.profile.weight;
+    $('w-kg').value = ''; $('w-waist').value = '';
+    save(); renderAll();
+  };
+}
+
+// ---------- 備餐 ----------
+function fillFoodSelect() {
+  const sel = $('m-food');
+  const groups = {};
+  allFoods().forEach((f) => { (groups[f.cat] = groups[f.cat] || []).push(f); });
+  sel.innerHTML = Object.keys(CAT_NAME).filter((c) => groups[c]).map((c) =>
+    `<optgroup label="${CAT_NAME[c]}">${groups[c].map((f) => `<option value="${esc(f.id)}">${esc(f.name)}${f.est ? '（估計）' : ''}</option>`).join('')}</optgroup>`
+  ).join('');
+}
+
+function prepTotals() {
+  const items = state.prep.items.map((it) => ({ ...it, food: foodById(it.id) })).filter((it) => it.food);
+  const tot = [0, 0, 0, 0];
+  items.forEach((it) => it.food.n.forEach((v, i) => { tot[i] += v * it.grams / 100; }));
+  const proteinGrams = items.filter((it) => it.food.cat === 'protein').reduce((s, it) => s + it.grams, 0);
+  return { items, tot, proteinGrams };
+}
+
+function renderPrep() {
+  const { items, tot, proteinGrams } = prepTotals();
+  $('m-table').innerHTML = items.length
+    ? '<tr><th>材料</th><th class="num">生重（g）</th><th></th></tr>' + items.map((it, i) => `<tr>
+        <td>${esc(it.food.name)}${it.food.est ? '<span class="tag">估計</span>' : ''}</td>
+        <td class="num" style="width:110px"><input type="number" inputmode="numeric" value="${it.grams}" data-g="${i}"></td>
+        <td class="num"><button class="danger small" data-rm="${i}">刪除</button></td></tr>`).join('')
+    : '<tr><td class="muted">未加入材料。</td></tr>';
+  $('m-table').querySelectorAll('[data-g]').forEach((el) => el.onchange = () => {
+    const v = num(el.value); if (v && v > 0) { state.prep.items[+el.dataset.g].grams = v; save(); renderPrep(); }
+  });
+  $('m-table').querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => {
+    state.prep.items.splice(+b.dataset.rm, 1); save(); renderPrep();
+  });
+
+  const suggest = proteinGrams ? Math.max(1, Math.round(proteinGrams / 200)) : null;
+  $('m-suggest').textContent = suggest ? `建議：以每盒約 200 g 生肉計，可以分成 ${suggest} 盒。` : '';
+  const boxesEl = $('m-boxes'), perDayEl = $('m-perday');
+  if (document.activeElement !== boxesEl) boxesEl.value = state.prep.boxes || (suggest || '');
+  if (document.activeElement !== perDayEl) perDayEl.value = state.prep.perDay || 2;
+
+  const out = $('m-out');
+  const boxes = num(state.prep.boxes) || suggest;
+  if (!items.length || !boxes) { out.innerHTML = '<p class="muted">加入材料之後，這裡會顯示每盒份量和營養。</p>'; return; }
+  const per = tot.map((v) => v / boxes);
+  const perDay = num(state.prep.perDay) || 2;
+  const t = calcTargets();
+  const days = boxes / perDay;
+
+  let html = `<div class="stats">
+    <div class="stat"><div class="k">每盒熱量</div><div class="v">${r0(per[0])}</div><div class="s">kcal</div></div>
+    <div class="stat"><div class="k">每盒蛋白質</div><div class="v">${r0(per[1])} g</div><div class="s">碳水 ${r0(per[2])} g・脂肪 ${r0(per[3])} g</div></div>
+    <div class="stat"><div class="k">可以食</div><div class="v">${r1(days)} 日</div><div class="s">每日 ${perDay} 盒</div></div>
+  </div>
+  <h3>每盒放幾多</h3>
+  <table><tr><th>材料</th><th class="num">每盒（生重）</th></tr>
+  ${items.map((it) => `<tr><td>${esc(it.food.name)}</td><td class="num">${r0(it.grams / boxes)} g</td></tr>`).join('')}
+  </table>
+  <p class="note">肉類縮水程度不一，最簡單的做法：全部煮熟之後秤總重，再平均分成 ${boxes} 盒。</p>`;
+
+  if (t) {
+    const remK = t.kcal - per[0] * perDay, remP = t.protein - per[1] * perDay;
+    html += '<h3>對比每日目標</h3>';
+    if (remK > 50) {
+      html += `<p style="margin:0">每日食 ${perDay} 盒之後，還差約 <b>${r0(remK)} kcal</b>、蛋白質 <b>${r0(Math.max(0, remP))} g</b>。</p>
+        <p class="note">可以用雞蛋、低脂奶、希臘乳酪、香蕉或燕麥補足，分成早餐或加餐。</p>`;
+    } else if (remK < -150) {
+      html += `<div class="warn">每日食 ${perDay} 盒已經超出目標約 ${r0(-remK)} kcal。可以減少每盒的澱粉或油，或者分成更多盒。</div>`;
+    } else {
+      html += '<p class="ok" style="margin:0">每日食這幾盒，熱量剛好接近目標。</p>';
+    }
+    const meals = parseInt(state.profile.meals, 10);
+    if (meals < perDay) html += `<div class="warn">你設定一日 ${meals} 餐，但每日要食 ${perDay} 盒，即每餐要食超過一盒。</div>`;
+  }
+
+  // 保存提示
+  const fridgeBoxes = Math.min(boxes, Math.round(perDay * 3));
+  const first = items.filter((it) => it.food.eatFirst).map((it) => it.food.name);
+  html += `<h3>保存</h3>
+    <p style="margin:0">頭 3 日的 <b>${fridgeBoxes} 盒</b>放雪櫃${boxes > fridgeBoxes ? `，其餘 <b>${boxes - fridgeBoxes} 盒</b>即刻放冰格，食之前一晚移到雪櫃解凍` : ''}。煮熟的食物在雪櫃一般只放 3–4 日。</p>
+    ${first.length ? `<p class="note">先食：${first.map(esc).join('、')}（翻熱之後容易出水、變色）。</p>` : ''}`;
+  out.innerHTML = html;
+}
+
+function bindPrep() {
+  fillFoodSelect();
+  $('m-add').onclick = () => {
+    const id = $('m-food').value, g = num($('m-grams').value);
+    if (!id || !g || g <= 0) { $('m-grams').focus(); return; }
+    const ex = state.prep.items.find((x) => x.id === id);
+    if (ex) ex.grams += g; else state.prep.items.push({ id, grams: g });
+    $('m-grams').value = ''; save(); renderPrep();
+  };
+  $('m-boxes').oninput = () => { state.prep.boxes = $('m-boxes').value; save(); renderPrep(); };
+  $('m-perday').oninput = () => { state.prep.perDay = $('m-perday').value; save(); renderPrep(); };
+  $('c-add').onclick = () => {
+    const name = $('c-name').value.trim();
+    const n = ['c-kcal', 'c-p', 'c-c', 'c-f'].map((id) => num($(id).value));
+    if (!name || n.some((v) => v === null || v < 0)) { $('c-name').focus(); return; }
+    state.customFoods.push({ id: 'custom_' + Date.now(), name, cat: $('c-cat').value, n });
+    ['c-name', 'c-kcal', 'c-p', 'c-c', 'c-f'].forEach((id) => { $(id).value = ''; });
+    save(); fillFoodSelect(); $('m-food').value = state.customFoods[state.customFoods.length - 1].id;
+  };
+}
+
+// ---------- 時間表 ----------
+function renderSchedule() {
+  const items = state.schedule.items;
+  $('s-table').innerHTML = items.length
+    ? '<tr><th>星期</th><th>開始</th><th>分鐘</th><th>內容</th><th>地點</th><th></th></tr>' + items.map((it, i) => `<tr>
+        <td style="min-width:64px"><select data-k="dow" data-i="${i}">${DOW.map((d, j) => `<option value="${j}" ${+it.dow === j ? 'selected' : ''}>${d}</option>`).join('')}</select></td>
+        <td style="min-width:96px"><input type="time" data-k="time" data-i="${i}" value="${esc(it.time)}"></td>
+        <td style="min-width:64px"><input type="number" inputmode="numeric" data-k="dur" data-i="${i}" value="${esc(it.dur)}"></td>
+        <td style="min-width:120px"><input data-k="title" data-i="${i}" value="${esc(it.title)}"></td>
+        <td style="min-width:100px"><input data-k="loc" data-i="${i}" value="${esc(it.loc)}"></td>
+        <td><button class="danger small" data-rm="${i}">刪除</button></td></tr>`).join('')
+    : '<tr><td class="muted">未有訓練項目，按「加一項」開始。</td></tr>';
+  $('s-table').querySelectorAll('[data-k]').forEach((el) => el.onchange = () => {
+    state.schedule.items[+el.dataset.i][el.dataset.k] = el.value; save();
+  });
+  $('s-table').querySelectorAll('[data-rm]').forEach((b) => b.onclick = () => {
+    state.schedule.items.splice(+b.dataset.rm, 1); save(); renderSchedule();
+  });
+}
+
+function bindSchedule() {
+  const s = state.schedule;
+  if (!s.start) s.start = todayStr();
+  if (!s.end) { const d = new Date(); d.setDate(d.getDate() + 56); s.end = ymd(d); }
+  $('s-start').value = s.start; $('s-end').value = s.end; $('s-alarm').value = s.alarm;
+  $('s-start').onchange = () => { s.start = $('s-start').value; save(); };
+  $('s-end').onchange = () => { s.end = $('s-end').value; save(); };
+  $('s-alarm').onchange = () => { s.alarm = $('s-alarm').value; save(); };
+  $('s-add').onclick = () => { s.items.push({ dow: 1, time: '10:45', dur: 60, title: '重訓', loc: '' }); save(); renderSchedule(); };
+  $('s-export').onclick = exportIcs;
+}
+
+function icsEscape(s) { return String(s).replace(/\\/g, '\\\\').replace(/;/g, '\\;').replace(/,/g, '\\,').replace(/\r?\n/g, '\\n'); }
+// 每行不超過 75 bytes（RFC 5545），避免切開中文字
+function icsFold(line) {
+  const enc = new TextEncoder();
+  if (enc.encode(line).length <= 75) return line;
+  const parts = []; let cur = '', limit = 75;
+  for (const ch of line) {
+    if (enc.encode(cur + ch).length > limit) { parts.push(cur); cur = ch; limit = 74; }
+    else cur += ch;
+  }
+  parts.push(cur);
+  return parts.join('\r\n ');
+}
+const icsLocal = (d, hh, mm) => `${ymd(d).replace(/-/g, '')}T${String(hh).padStart(2, '0')}${String(mm).padStart(2, '0')}00`;
+
+function exportIcs() {
+  const s = state.schedule, msg = $('s-msg');
+  const valid = s.items.filter((it) => /^\d{2}:\d{2}$/.test(it.time) && num(it.dur) > 0 && it.title);
+  if (!valid.length) { msg.textContent = '請先加入至少一項訓練（要有時間、分鐘和內容）。'; return; }
+  if (!s.start || !s.end || s.end < s.start) { msg.textContent = '請檢查開始和結束日期。'; return; }
+  const start = parseYmd(s.start), end = parseYmd(s.end);
+  // 香港時間 23:59:59 = UTC 15:59:59
+  const until = `${s.end.replace(/-/g, '')}T155959Z`;
+  const stamp = new Date().toISOString().replace(/[-:]/g, '').replace(/\.\d{3}/, '');
+  const lines = ['BEGIN:VCALENDAR', 'VERSION:2.0', 'PRODID:-//FitPlan//v0.2//ZH', 'CALSCALE:GREGORIAN', 'METHOD:PUBLISH',
+    'BEGIN:VTIMEZONE', 'TZID:Asia/Hong_Kong', 'BEGIN:STANDARD', 'DTSTART:19700101T000000',
+    'TZOFFSETFROM:+0800', 'TZOFFSETTO:+0800', 'TZNAME:HKT', 'END:STANDARD', 'END:VTIMEZONE'];
+  let count = 0;
+  valid.forEach((it, i) => {
+    const first = new Date(start);
+    first.setDate(first.getDate() + ((+it.dow - first.getDay() + 7) % 7));
+    if (first > end) return;
+    const [hh, mm] = it.time.split(':').map(Number);
+    const endMin = hh * 60 + mm + Math.round(num(it.dur));
+    if (endMin >= 24 * 60) return;
+    lines.push('BEGIN:VEVENT',
+      `UID:fitplan-${stamp}-${i}@fitplan.local`,
+      `DTSTAMP:${stamp}`,
+      `DTSTART;TZID=Asia/Hong_Kong:${icsLocal(first, hh, mm)}`,
+      `DTEND;TZID=Asia/Hong_Kong:${icsLocal(first, Math.floor(endMin / 60), endMin % 60)}`,
+      `RRULE:FREQ=WEEKLY;UNTIL=${until}`,
+      `SUMMARY:${icsEscape(it.title)}`);
+    if (it.loc) lines.push(`LOCATION:${icsEscape(it.loc)}`);
+    if (+s.alarm > 0) lines.push('BEGIN:VALARM', 'ACTION:DISPLAY', `DESCRIPTION:${icsEscape(it.title)}`, `TRIGGER:-PT${+s.alarm}M`, 'END:VALARM');
+    lines.push('END:VEVENT');
+    count++;
+  });
+  lines.push('END:VCALENDAR');
+  if (!count) { msg.textContent = '日期範圍內沒有可以匯出的訓練。'; return; }
+  const text = lines.map(icsFold).join('\r\n') + '\r\n';
+  download(new Blob([text], { type: 'text/calendar;charset=utf-8' }), '訓練時間表.ics');
+  msg.textContent = `已產生 ${count} 個每週重複的訓練（${s.start} 至 ${s.end}）。`;
+}
+
+function download(blob, filename) {
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = filename;
+  document.body.appendChild(a); a.click(); a.remove();
+  setTimeout(() => URL.revokeObjectURL(url), 5000);
+}
+
+// ---------- 備份 ----------
+function bindSettings() {
+  $('b-export').onclick = () => {
+    download(new Blob([JSON.stringify(state, null, 2)], { type: 'application/json' }), `健身規劃備份_${todayStr()}.json`);
+    $('b-msg').textContent = '已下載備份。';
+  };
+  $('b-import').onchange = async (e) => {
+    const file = e.target.files[0]; if (!file) return;
+    try {
+      const data = JSON.parse(await file.text());
+      if (!data || data.version !== 1 || !data.profile) throw new Error('格式不符');
+      state = merge(data); save();
+      $('b-msg').textContent = '已匯入備份。';
+      init();
+    } catch (err) { $('b-msg').textContent = '匯入失敗：檔案不是本工具的備份。'; }
+    e.target.value = '';
+  };
+  let armed = false;
+  $('b-clear').onclick = () => {
+    if (!armed) {
+      armed = true; $('b-clear').textContent = '再按一次確認清除'; $('b-clear-msg').textContent = '清除後無法復原，建議先下載備份。';
+      setTimeout(() => { armed = false; $('b-clear').textContent = '清除全部資料'; $('b-clear-msg').textContent = ''; }, 5000);
+      return;
+    }
+    state = DEFAULT_STATE(); save(); armed = false;
+    $('b-clear').textContent = '清除全部資料'; $('b-clear-msg').textContent = '已清除。';
+    init();
+  };
+}
+
+function renderAll() { renderPace(); renderGoal(); renderWeights(); renderPrep(); renderSchedule(); }
+function init() {
+  bindProfile(); bindWeights(); bindPrep(); bindSchedule(); bindSettings(); renderAll();
+}
+init();
+
+if ('serviceWorker' in navigator && location.protocol.startsWith('http')) {
+  navigator.serviceWorker.register('sw.js').catch(() => {});
+}
+</script>
+</body>
+</html>
